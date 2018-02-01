@@ -1,15 +1,15 @@
 // +build windows
 package clip
 
-import(
-	"syscall"
-	"fmt"
+import (
 	"bytes"
+	"fmt"
 	"runtime"
+	"syscall"
 	"unsafe"
 )
 
-const(
+const (
 	CFText int = iota + 1
 	CFBitmap
 	CFMetaFile
@@ -28,26 +28,25 @@ const(
 
 //go:generate go run C:\go\src\syscall\mksyscall_windows.go  -output zclip_windows.go clip_windows.go
 
-
-const(
-	gmMovable = 2
-	defaultBufSize = 1024*128
+const (
+	gmMovable      = 2
+	defaultBufSize = 1024 * 128
 )
 
-type Clip struct{
-	gh syscall.Handle
-	wp []byte
+type Clip struct {
+	gh                    syscall.Handle
+	wp                    []byte
 	readch, writech, done chan request
 }
 
-func New() (*Clip, error){
+func New() (*Clip, error) {
 	c := &Clip{
-		readch: make(chan request),
+		readch:  make(chan request),
 		writech: make(chan request),
-		done: make(chan request),
+		done:    make(chan request),
 	}
 	err := c.loop() // runs in its own goroutine
-	if err != nil{
+	if err != nil {
 		return nil, err
 	}
 	return c, nil
@@ -57,21 +56,21 @@ func free(c *Clip) {
 	GlobalFree(c.gh)
 }
 
-func (c *Clip) loop() error{
+func (c *Clip) loop() error {
 	initc := make(chan error)
-	go func(){
+	go func() {
 		runtime.LockOSThread()
 		defer runtime.UnlockOSThread()
 		initc <- nil
-		for{
-			select{
-			case r := <- c.readch:
+		for {
+			select {
+			case r := <-c.readch:
 				n, err := c.read(r.p)
 				r.replyc <- reply{n, err}
-			case r := <- c.writech:
+			case r := <-c.writech:
 				n, err := c.write(r.p)
 				r.replyc <- reply{n, err}
-			case r := <- c.done:
+			case r := <-c.done:
 				err := c.close()
 				r.replyc <- reply{err: err}
 				return
@@ -79,94 +78,94 @@ func (c *Clip) loop() error{
 		}
 		panic("never happens")
 	}()
-	return <- initc
+	return <-initc
 }
 
-type request struct{
-	p []byte
+type request struct {
+	p      []byte
 	replyc chan reply
 }
 
-type reply struct{
-	n int
+type reply struct {
+	n   int
 	err error
 }
 
-func (c *Clip) Read(p []byte) (n int, err error){
+func (c *Clip) Read(p []byte) (n int, err error) {
 	rep := make(chan reply)
 	c.readch <- request{p, rep}
-	r := <- rep
+	r := <-rep
 	return r.n, r.err
 }
 
-func (c *Clip) Write(p []byte) (n int, err error){
+func (c *Clip) Write(p []byte) (n int, err error) {
 	rep := make(chan reply)
 	c.writech <- request{p, rep}
-	r := <- rep
+	r := <-rep
 	return r.n, r.err
 }
 
-func (c *Clip) Close() (err error){
+func (c *Clip) Close() (err error) {
 	rep := make(chan reply)
 	c.done <- request{nil, rep}
-	r := <- rep
+	r := <-rep
 	return r.err
 }
 
-func (c *Clip) close() (err error){
+func (c *Clip) close() (err error) {
 	return CloseClipboard()
 }
 
-func (c *Clip) write(p []byte) (n int, err error){
-	defer func(){
-		if err != nil{
+func (c *Clip) write(p []byte) (n int, err error) {
+	defer func() {
+		if err != nil {
 			fmt.Println("write err", err)
 		}
 	}()
-	if err = OpenClipboard(0); err != nil{
+	if err = OpenClipboard(0); err != nil {
 		return 0, fmt.Errorf("OpenClipboard: %s", err)
 	}
 	defer CloseClipboard()
 	gh, err := GlobalAlloc(gmMovable, len(p)+2)
-	if err != nil{
+	if err != nil {
 		return 0, err
 	}
 	h, err := GlobalLock(gh)
-	if err != nil{
+	if err != nil {
 		return 0, fmt.Errorf("GlobalLock: %s", err)
 	}
-	buf := (*(*[1<<31-1]byte) (unsafe.Pointer(h)))[:len(p)]
+	buf := (*(*[1<<31 - 1]byte)(unsafe.Pointer(h)))[:len(p)]
 	n = copy(buf[:], p)
-	if err = GlobalUnlock(c.gh); err != nil{
+	if err = GlobalUnlock(c.gh); err != nil {
 		return 0, fmt.Errorf("GlobalUnlock: %s", err)
 	}
-	if err = SetClipboardData(CFUnicode, gh); err != nil{
+	if err = SetClipboardData(CFUnicode, gh); err != nil {
 		return 0, fmt.Errorf("SetClipboardData: %s", err)
 	}
 	return n, err
 	// return n, CloseClipboard()
 }
 
-func (c *Clip) read(p []byte) (n int, err error){
+func (c *Clip) read(p []byte) (n int, err error) {
 	OpenClipboard(0)
 	defer CloseClipboard()
 	ha, err := GetClipboardData(CFUnicode)
-	if err != nil{
+	if err != nil {
 		return n, err
 	}
 	glen, err := GlobalSize(ha)
-	if err != nil{
+	if err != nil {
 		return
 	}
 	h, err := GlobalLock(ha)
-	if err != nil{
+	if err != nil {
 		return
 	}
-	buf := (*(*[1<<31-1]byte) (unsafe.Pointer(h)))[:glen]
+	buf := (*(*[1<<31 - 1]byte)(unsafe.Pointer(h)))[:glen]
 	defer GlobalUnlock(ha)
-	if n = bytes.Index(buf[:], []byte("\x00\x00")); n < 0{
+	if n = bytes.Index(buf[:], []byte("\x00\x00")); n < 0 {
 		n = len(buf)
-	} else{
+	} else {
 		n += 2
 	}
 	return copy(p, buf[:n]), err
