@@ -20,7 +20,7 @@ func (c *Clip) Read(p []byte) (n int, err error) {
 }
 
 func (c *Clip) Write(p []byte) (n int, err error) {
-	cmd := exec.Command("xclip", "-i", "selection", "primary")
+	cmd := exec.Command("xclip", "-i", "-selection", "primary")
 	b := bytes.NewBuffer(p)
 	cmd.Stdin = b
 	return len(p) - b.Len(), cmd.Run()
