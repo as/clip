@@ -20,13 +20,14 @@ func (c *Clip) Read(p []byte) (n int, err error) {
 }
 
 func (c *Clip) Write(p []byte) (n int, err error) {
-	c.writeTo(p, "clipboard")
+	n, err = c.writeTo(p, "clipboard")
+	n, err = c.writeTo(p, "primary")
 	return c.writeTo(p, "primary")
 }
 
 func (c *Clip) writeTo(p []byte, dst string) (n int, err error) {
-	b := bytes.NewReader(p)
+	b := bytes.NewBuffer(p)
 	cmd := exec.Command("xclip", "-i", "-selection", dst)
 	cmd.Stdin = b
-	return len(p) - b.Len(), cmd.Run()
+	return len(p) - (len(p) - b.Len()), cmd.Run()
 }
